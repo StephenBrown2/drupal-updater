@@ -85,7 +85,7 @@ sub module_is_locked {
     }
 }
 
-sub get_modules_drush {
+sub get_modules_list {
     my %modules_info;
 
     open (DRUSHPMLIST, "COLUMNS=1000 $DRUSH_BIN pm-list 2>/dev/null |");
@@ -115,7 +115,7 @@ sub get_modules_drush {
 
 sub get_modules_info {
     my %drush_up = &get_drush_up_status;
-    my %modules_info = &get_modules_drush;
+    my %modules_info = &get_modules_list;
     my %return_hash;
 
     foreach my $name ( keys %drush_up ) {
