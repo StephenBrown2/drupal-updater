@@ -1,5 +1,5 @@
-Drupal udate and git commit script
------------------------------------
+Drupal update and git commit script
+===================================
 
 This script uses the black magic or Perl, combined with the dexterity of Drush
 and the wonders of git, to update modules in a Drupal installation and commit
@@ -8,13 +8,13 @@ each one to the git repository, assuming there is one.
 
 Assumptions:
 ------------
-# Drush and git are installed and accessible in the PATH of the script,
-# The current directory is at least the root of a Drupal installation,
+1. Drush and git are installed and accessible in the PATH of the script.
+2. The current directory is at least the root of a Drupal installation,
 and actions such as 'drush up' can take place. This means, for now,
 that this does not work in the root of a multi-site installation,
 you need to be inside a site directory. This should change soon.
-# The current directory is inside a git repository
-# There are no uncommitted changes or untracked files, in other words,
+3. The current directory is inside a git repository.
+4. There are no uncommitted changes or untracked files, in other words,
 the git repository must be 'clean'.
 
 Usage:
@@ -36,10 +36,11 @@ or '--nodb' to simply skip the database update.
 
 Options:
 --------
---blind     runs through all updates without pausing to check for breakage in between
---dryrun    runs through the motions without actually performing any changes
---nodb      runs through all code updates, but does not update the database
-
+<pre>
+--blind  | runs through all updates without pausing to check for breakage in between
+--dryrun | runs through the motions without actually performing any changes
+--nodb   | runs through all code updates, but does not update the database
+</pre>
 
 TODO:
 -----
