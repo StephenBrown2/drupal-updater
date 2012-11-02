@@ -8,8 +8,8 @@ use Data::Dumper;
 
 our $DRUSH_BIN = '';
 our $GIT_BIN = '';
-my ($blind,$dryrun,$nodb);
-my $options = GetOptions ("blind" => \$blind, "test|dryrun" => \$dryrun, "nodb" => \$nodb);
+my ($blind,$dryrun,$nodb,$verbose);
+my $options = GetOptions ("blind" => \$blind, "test|dryrun" => \$dryrun, "nodb" => \$nodb, "verbose" => \$verbose);
 
 sub get_drush_up_status {
     my %update_info;
@@ -242,13 +242,12 @@ sub update_module {
     my $blank_lines = 0;
     my $blanks_needed = 3;
     
-    my $verbose = 0;
-
     if ($dryrun) {
         open (DRUSHUP, "$DRUSH_BIN pm-update -n --cache $module_name 2>&1 |");
     } else {
         open (DRUSHUP, "$DRUSH_BIN pm-update -y --cache $module_name 2>&1 |");
     }
+
     if ($verbose) {
         while (<DRUSHUP>) {
             chomp;
@@ -260,6 +259,7 @@ sub update_module {
             print "$_\n" if $blank_lines >= $blanks_needed;
         }
     }
+
     close DRUSHUP;
 }
 
