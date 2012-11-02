@@ -247,7 +247,7 @@ sub update_module {
     if ($dryrun) {
         open (DRUSHUP, "$DRUSH_BIN pm-update -n --cache $module_name 2>&1 |");
     } else {
-        open (DRUSHUP, "$DRUSH_BIN pm-update --cache $module_name 2>&1 |");
+        open (DRUSHUP, "$DRUSH_BIN pm-update -y --cache $module_name 2>&1 |");
     }
     if ($verbose) {
         while (<DRUSHUP>) {
