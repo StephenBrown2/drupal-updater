@@ -9,12 +9,13 @@ each one to the git repository, assuming there is one.
 Assumptions:
 ------------
 1. Drush and git are installed and accessible in the PATH of the script.
-2. The current directory is at least the root of a Drupal installation,
+2. You have the proper permissions to run 'drush pm-update' and 'git commit'
+3. The current directory is at least the root of a Drupal installation,
 and actions such as 'drush up' can take place. This means, for now,
 that this does not work in the root of a multi-site installation,
 you need to be inside a site directory. This should change soon.
-3. The current directory is inside a git repository.
-4. There are no uncommitted changes or untracked files, in other words,
+4. The current directory is inside a git repository.
+5. There are no uncommitted changes or untracked files, in other words,
 the git repository must be 'clean'.
 
 Usage:
