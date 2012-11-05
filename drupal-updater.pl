@@ -261,6 +261,14 @@ sub update_module {
     }
 
     close DRUSHUP;
+
+    # Do some cleanup, don't need the tarball after update
+    my %drush_status = &drush_status;
+    my $module_path = &module_path($module_name);
+    my $cachefile = $drush_status{'drupal_root'}.'/'.$module_path.'*.tar.gz';
+
+    qx/rm -f $cachefile/;
+}
 }
 
 sub git_commit {
