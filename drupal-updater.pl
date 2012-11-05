@@ -269,12 +269,38 @@ sub update_module {
 
     qx/rm -f $cachefile/;
 }
+
+sub git_proper_user {
+    my $login = getlogin || getpwuid($<) || "unknown user";
+    my $name;
+    my $email;
+    my %return;
+
+    if ( -e "/home/$login/.gitconfig" ) {
+        # Get the git author information from the actual user's gitconfig, useful if sudo'ed
+        $return{'name'} = qx($GIT_BIN config --file /home/$login/.gitconfig --get user.name);
+        $return{'email'} = qx($GIT_BIN config --file /home/$login/.gitconfig --get user.email);
+    } elsif ( -e "/$login/.gitconfig" ) {
+        # Fallback for root user if actual user isn't detected
+        $return{'name'} = qx($GIT_BIN config --file /$login/.gitconfig --get user.name);
+        $return{'email'} = qx($GIT_BIN config --file /$login/.gitconfig --get user.email);
+    } else {
+        # Fallback if things really break for some reason
+        $return{'name'} = qx($GIT_BIN config --get user.name);
+        $return{'email'} = qx($GIT_BIN config --get user.email);
+    }
+
+    return %return;
 }
 
 sub git_commit {
     my $update_info = shift || die("No message passed to git commit");
+    my %user = &git_proper_user;
+    my $username = $user{'name'};
+    my $useremail = $user{'email'};
+
     qx($GIT_BIN add -A .) unless $dryrun;
-    qx($GIT_BIN commit -m "$update_info") unless $dryrun;
+    qx($GIT_BIN commit --author='$username <$useremail>' -m "$update_info") unless $dryrun;
 }
 
 sub press_any_key {
