@@ -343,10 +343,10 @@ sub post_update {
     my $module = shift;
 
     print "Updating database...\n";
-    qx($DRUSH_BIN updatedb -y) unless ($dryrun or $nodb);
+    qx($DRUSH_BIN \@sites updatedb -y) unless ($dryrun or $nodb);
 
     print "Clearing cache...\n";
-    qx($DRUSH_BIN cache-clear all) unless $dryrun;
+    qx($DRUSH_BIN \@sites cache-clear all) unless $dryrun;
 
     print "\nPlease verify that nothing broke,\n";
     print "especially anything related to: $module\nThen ";
