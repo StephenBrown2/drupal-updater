@@ -224,7 +224,8 @@ sub require_clean_work_tree {
     }
 
     if ( $err == 1 ) {
-        print "Please commit, remove, or stash them.\n";
+        print "Please commit, remove, or stash them before continuing.\n";
+        print "If they are not your changes, please contact the developer responsible for them.\n";
         exit 1;
     }
 }
