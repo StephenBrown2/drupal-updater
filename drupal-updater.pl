@@ -169,6 +169,10 @@ sub is_git {
     }
 }
 
+sub git_root_dir {
+    return qx/$GIT_BIN rev-parse --show-toplevel/;
+}
+
 sub git_is_dirty {
     if (&is_git) {
         system($GIT_BIN, "diff-index", "--quiet", "HEAD", "--");
@@ -296,11 +300,12 @@ sub git_proper_user {
 
 sub git_commit {
     my $update_info = shift || die("No message passed to git commit");
+    my $git_root = &git_root_dir;
     my %user = &git_proper_user;
     my $username = $user{'name'};
     my $useremail = $user{'email'};
 
-    qx($GIT_BIN add -A .) unless $dryrun;
+    qx($GIT_BIN add -A $git_root) unless $dryrun;
     qx($GIT_BIN commit --author='$username <$useremail>' -m "$update_info") unless $dryrun;
 }
 
