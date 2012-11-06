@@ -211,7 +211,7 @@ sub require_clean_work_tree {
     # Check for untracked files in working tree, since we will by default
     #  be adding all files to the commit
     # Note: Not taken from git, but from second SO reference above
-    system("$GIT_BIN ls-files --exclude-standard --others --error-unmatch . >/dev/null 2>&1");
+    system("$GIT_BIN ls-files --exclude-standard --others --error-unmatch \$(git rev-parse --show-toplevel) >/dev/null 2>&1");
     $exit = $? >> 8;
 
     if ( ! $exit ) {
