@@ -248,6 +248,7 @@ sub update_module {
     my $blanks_needed = 3;
     
     if ($dryrun) {
+        print "DRYRUN:\n";
         open (DRUSHUP, "$DRUSH_BIN pm-update -n --cache $module_name 2>&1 |");
     } else {
         open (DRUSHUP, "$DRUSH_BIN pm-update -y --cache $module_name 2>&1 |");
@@ -272,7 +273,11 @@ sub update_module {
     my $module_path = &module_path($module_name);
     my $cachefile = $drush_status{'drupal_root'}.'/'.$module_path.'*.tar.gz';
 
-    qx/rm -f $cachefile/;
+    if ($dryrun) {
+        print "DRYRUN: rm -f $cachefile\n";
+    } else {
+        qx/rm -f $cachefile/;
+    }
 }
 
 sub git_proper_user {
@@ -305,8 +310,13 @@ sub git_commit {
     my $username = $user{'name'};
     my $useremail = $user{'email'};
 
-    qx($GIT_BIN add -A $git_root) unless $dryrun;
-    qx($GIT_BIN commit --author='$username <$useremail>' -m "$update_info") unless $dryrun;
+    if ($dryrun) {
+        print "DRYRUN: $GIT_BIN add -A $git_root\n";
+        print "DRYRUN: $GIT_BIN commit --author='$username <$useremail>' -m '$update_info'\n";
+    } else {
+        qx($GIT_BIN add -A $git_root);
+        qx($GIT_BIN commit --author='$username <$useremail>' -m "$update_info");
+    }
 }
 
 sub press_any_key {
