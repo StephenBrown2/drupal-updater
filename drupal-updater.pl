@@ -288,17 +288,21 @@ sub git_proper_user {
 
     if ( -e "/home/$login/.gitconfig" ) {
         # Get the git author information from the actual user's gitconfig, useful if sudo'ed
-        $return{'name'} = qx($GIT_BIN config --file /home/$login/.gitconfig --get user.name);
-        $return{'email'} = qx($GIT_BIN config --file /home/$login/.gitconfig --get user.email);
+        $name = qx($GIT_BIN config --file /home/$login/.gitconfig --get user.name);
+        $email = qx($GIT_BIN config --file /home/$login/.gitconfig --get user.email);
     } elsif ( -e "/$login/.gitconfig" ) {
         # Fallback for root user if actual user isn't detected
-        $return{'name'} = qx($GIT_BIN config --file /$login/.gitconfig --get user.name);
-        $return{'email'} = qx($GIT_BIN config --file /$login/.gitconfig --get user.email);
+        $name = qx($GIT_BIN config --file /$login/.gitconfig --get user.name);
+        $email = qx($GIT_BIN config --file /$login/.gitconfig --get user.email);
     } else {
         # Fallback if things really break for some reason
-        $return{'name'} = qx($GIT_BIN config --get user.name);
-        $return{'email'} = qx($GIT_BIN config --get user.email);
+        $name = qx($GIT_BIN config --get user.name);
+        $email = qx($GIT_BIN config --get user.email);
     }
+
+    chomp( $name, $email );
+    $return{'name'} = $name;
+    $return{'email'} = $email;
 
     return %return;
 }
