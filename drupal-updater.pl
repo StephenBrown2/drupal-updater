@@ -313,13 +313,13 @@ sub press_any_key {
 
 sub check_requirements {
     if (&has_drush) {
-        print "Drush is installed\n";
+        print "Drush is installed: $DRUSH_BIN\n";
     } else {
         print "Could not find drush, exiting.\n";
         exit;
     }
     if (&has_git) {
-        print "Git is installed\n";
+        print "Git is installed: $GIT_BIN\n";
     } else {
         print "Could not find git, exiting.\n";
         exit;
