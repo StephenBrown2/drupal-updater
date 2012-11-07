@@ -170,7 +170,11 @@ sub is_git {
 }
 
 sub git_root_dir {
-    return qx/$GIT_BIN rev-parse --show-toplevel/;
+    if (&is_git) {
+        my $dir = qx/$GIT_BIN rev-parse --show-toplevel/;
+        chomp $dir;
+        return $dir;
+    }
 }
 
 sub git_is_dirty {
