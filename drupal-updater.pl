@@ -258,9 +258,9 @@ sub update_module {
         open (DRUSHUP, "$DRUSH_BIN pm-update -y --cache $module_name 2>&1 |");
     }
 
-    if ($verbose) {
-        while (<DRUSHUP>) {
-            chomp;
+    while (<DRUSHUP>) {
+        chomp;
+        if ($verbose) {
             if ( /^\s*$/ ) {
                 $blank_lines++;
             } else {
