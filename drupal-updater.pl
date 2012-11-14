@@ -322,8 +322,12 @@ sub git_commit {
         print "DRYRUN: $GIT_BIN add -A $git_root\n";
         print "DRYRUN: $GIT_BIN commit --author='$username <$useremail>' -m '$update_info'\n";
     } else {
-        qx($GIT_BIN add -A $git_root);
-        qx($GIT_BIN commit --author='$username <$useremail>' -m "$update_info");
+        print "VERBOSE: $GIT_BIN add -A $git_root\n" if $verbose;
+        my $git_add_output = qx($GIT_BIN add -A $git_root);
+        print $git_add_output if $verbose;
+        print "VERBOSE: $GIT_BIN commit --author='$username <$useremail>' -m '$update_info'\n" if $verbose;
+        my $git_commit_output = qx($GIT_BIN commit --author='$username <$useremail>' -m '$update_info');
+        print $git_commit_output if $verbose;
     }
 }
 
