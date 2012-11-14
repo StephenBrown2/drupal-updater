@@ -400,6 +400,7 @@ sub main {
         printf "%s\n", $info{$k}{'message'};
         &update_module($info{$k}{'module'});
         $modules .= $info{$k}{'module'}.", ";
+        printf "Committing update to %s\n", $info{$k}{'module'};
         &git_commit($info{$k}{'message'});
         
         unless ($blind) {
