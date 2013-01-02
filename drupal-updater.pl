@@ -8,8 +8,8 @@ use Data::Dumper;
 
 our $DRUSH_BIN = '';
 our $GIT_BIN = '';
-my ($blind,$dryrun,$nodb,$verbose);
-my $options = GetOptions ("blind" => \$blind, "test|dryrun" => \$dryrun, "nodb" => \$nodb, "verbose" => \$verbose);
+my ($blind,$dryrun,$nodb,$verbose,$coreonly);
+my $options = GetOptions ("blind" => \$blind, "test|dryrun" => \$dryrun, "nodb" => \$nodb, "verbose" => \$verbose, "core-only" => \$coreonly);
 
 sub get_drush_up_status {
     my %update_info;
@@ -127,6 +127,7 @@ sub get_modules_info {
     # Unsupported, then Security, then regular (Bugfix) updates
     my $priority = 0;
     foreach my $key ( sort {$drush_up{$a}{'update_status'} cmp $drush_up{$b}{'update_status'}} keys %drush_up ) {
+        if ($coreonly) { next unless $drush_up{$key}{'machine_name'} eq 'drupal'; }
         my $message = sprintf "Update %s module (%s) from %s to %s - %s",
                     $drush_up{$key}{'human_name'},
                     $drush_up{$key}{'machine_name'},
