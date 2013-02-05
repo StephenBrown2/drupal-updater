@@ -4,7 +4,6 @@ use strict;
 
 use Term::ReadKey;
 use Getopt::Long;
-use Data::Dumper;
 
 our $DRUSH_BIN = '';
 our $GIT_BIN = '';
