@@ -7,8 +7,16 @@ use Getopt::Long;
 
 our $DRUSH_BIN = '';
 our $GIT_BIN = '';
-my ($blind,$dryrun,$nodb,$verbose,$coreonly,$securityonly);
-my $options = GetOptions ("blind" => \$blind, "test|dryrun" => \$dryrun, "nodb" => \$nodb, "verbose" => \$verbose, "core-only" => \$coreonly, "security-only" => \$securityonly);
+my ($blind,$dryrun,$nodb,$verbose,$author,$coreonly,$securityonly);
+my $options = GetOptions (
+                 "blind" => \$blind,
+                 "test|dryrun" => \$dryrun,
+                 "nodb" => \$nodb,
+                 "verbose" => \$verbose,
+                 "author=s" => \$author,
+                 "core-only" => \$coreonly,
+                 "security-only" => \$securityonly
+              );
 
 sub get_drush_up_status {
     my %update_info;
@@ -333,16 +341,17 @@ sub git_commit {
     my %user = &git_proper_user;
     my $username = $user{'name'};
     my $useremail = $user{'email'};
+    my $authorstring = $author ? $author : "$username <$useremail>";
 
     if ($dryrun) {
         print "DRYRUN: $GIT_BIN add -A $git_root\n";
-        print "DRYRUN: $GIT_BIN commit --author=\"$username <$useremail>\" -m \"$update_info\"\n";
+        print "DRYRUN: $GIT_BIN commit --author=\"$authorstring\" -m \"$update_info\"\n";
     } else {
         print "VERBOSE: $GIT_BIN add -A $git_root\n" if $verbose;
         my $git_add_output = qx($GIT_BIN add -A $git_root);
         print $git_add_output if $verbose;
-        print "VERBOSE: $GIT_BIN commit --author=\"$username <$useremail>\" -m \"$update_info\"\n" if $verbose;
-        my $git_commit_output = qx($GIT_BIN commit --author="$username <$useremail>" -m "$update_info");
+        print "VERBOSE: $GIT_BIN commit --author=\"$authorstring\" -m \"$update_info\"\n" if $verbose;
+        my $git_commit_output = qx($GIT_BIN commit --author="$authorstring" -m "$update_info");
         print $git_commit_output if $verbose;
     }
 }
@@ -398,6 +407,10 @@ sub post_update {
 
 sub main {
     my $total_time = time;
+
+    if ($author && $author !~ /^[^<]+<[^@]+@[^>]+>$/) {
+        die "Invalid author string format. Must be in the form of 'Real Name <email\@address>'\n";
+    }
 
     print "Checking requirements... \n";
     &check_requirements;
