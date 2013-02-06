@@ -7,8 +7,8 @@ use Getopt::Long;
 
 our $DRUSH_BIN = '';
 our $GIT_BIN = '';
-my ($blind,$dryrun,$nodb,$verbose,$coreonly);
-my $options = GetOptions ("blind" => \$blind, "test|dryrun" => \$dryrun, "nodb" => \$nodb, "verbose" => \$verbose, "core-only" => \$coreonly);
+my ($blind,$dryrun,$nodb,$verbose,$coreonly,$securityonly);
+my $options = GetOptions ("blind" => \$blind, "test|dryrun" => \$dryrun, "nodb" => \$nodb, "verbose" => \$verbose, "core-only" => \$coreonly, "security-only" => \$securityonly);
 
 sub get_drush_up_status {
     my %update_info;
@@ -142,6 +142,7 @@ sub get_modules_info {
     my $priority = 0;
     foreach my $key ( sort {$drush_up{$a}{'update_status'} cmp $drush_up{$b}{'update_status'}} keys %drush_up ) {
         if ($coreonly) { next unless $drush_up{$key}{'machine_name'} eq 'drupal'; }
+        if ($securityonly) { next unless $drush_up{$key}{'update_status'} =~ m/SECURITY/; }
         my $message = sprintf "Update %s module (%s) from %s to %s - %s",
                     $drush_up{$key}{'human_name'},
                     $drush_up{$key}{'machine_name'},
