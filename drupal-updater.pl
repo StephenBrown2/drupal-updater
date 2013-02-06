@@ -53,11 +53,26 @@ sub module_path {
 sub drush_status {
     my @oa = split /\s+:|\n/, `$DRUSH_BIN status 2>/dev/null`;
 
+    my ($slash, $prev_slash);
+    my $index = 0;
     for (@oa) {
         chomp;
         s/^\s*|\s*$|\s{2,}//g;
         $_ = 'none' if $_ eq '';
+        if ( $_ =~ m/^\// ) { # Sometimes there are more than one value per key
+            $slash = 1;       # These are generally file paths
+        } else {
+            $slash = 0;
+        }
+        if ( $slash and $prev_slash ) { # Combine multiple sequential file paths
+            splice @oa, $index-1, 2, $oa[$index-1]." $_";
+            $slash = 0;
+        }
+        $prev_slash = $slash;
+        $index++;
     }
+
+    map { s/^\s*|\s*$|\s{2,}//g } @oa; # Redo the space cleanup
 
     my %oh = @oa;
 
