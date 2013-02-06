@@ -276,7 +276,7 @@ sub update_module {
     my $blanks_needed = 3;
     
     if ($dryrun) {
-        print "DRYRUN:\n";
+        print "DRYRUN: '$DRUSH_BIN pm-update -n --cache $module_name 2>&1 |'\n";
         open (DRUSHUP, "$DRUSH_BIN pm-update -n --cache $module_name 2>&1 |");
     } else {
         open (DRUSHUP, "$DRUSH_BIN pm-update -y --cache $module_name 2>&1 |");
