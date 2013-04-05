@@ -2,21 +2,38 @@
 use warnings;
 use strict;
 
+use Cwd qw(abs_path);
+use POSIX qw(strftime);
 use Term::ReadKey;
 use Getopt::Long;
+use Data::Dumper;
 
 our $DRUSH_BIN = '';
 our $GIT_BIN = '';
-my ($blind,$dryrun,$nodb,$verbose,$author,$coreonly,$securityonly);
+my ($blind,$dryrun,$keeplog,$nodb,$verbose,$author,$coreonly,$securityonly,$notifyemail);
 my $options = GetOptions (
                  "blind" => \$blind,
                  "test|dryrun" => \$dryrun,
+                 "log|keeplog" => \$keeplog,
                  "nodb" => \$nodb,
                  "verbose" => \$verbose,
                  "author=s" => \$author,
                  "core-only" => \$coreonly,
-                 "security-only" => \$securityonly
+                 "security-only" => \$securityonly,
+                 "notify|email=s" => \$notifyemail
               );
+
+# Set up logfile
+my $timenow = strftime("%FT%T", localtime);
+my $timefile = $timenow;
+   $timefile =~ tr/:/-/;
+my $tmpfile = "/tmp/drupal_updater-$timefile.log";
+
+open(my $log, ">>", $tmpfile);
+
+# Set up INT (Ctrl-C) (Ctrl-C) (Ctrl-C) (Ctrl-C) (Ctrl-C) (Ctrl-C) (Ctrl-C)
+# (Ctrl-C) (Ctrl-C) handler
+$SIG{'INT'} = \&end_sub;
 
 sub get_drush_up_status {
     my %update_info;
@@ -43,7 +60,7 @@ sub get_drush_up_status {
 
 sub module_path {
     my $module = shift;
-    
+
     my @info = split /\s:|\n/, `$DRUSH_BIN pm-info $module 2>/dev/null`;
 
     my $path = 0;
@@ -274,7 +291,7 @@ sub update_module {
     my $module_name = shift;
     my $blank_lines = 0;
     my $blanks_needed = 3;
-    
+
     if ($dryrun) {
         print "DRYRUN: '$DRUSH_BIN pm-update -n --cache $module_name 2>&1 |'\n";
         open (DRUSHUP, "$DRUSH_BIN pm-update -n --cache $module_name 2>&1 |");
@@ -309,7 +326,7 @@ sub update_module {
 }
 
 sub git_proper_user {
-    my $login = getlogin || getpwuid($<) || "unknown user";
+    my $login = getlogin || getpwuid($<) || "unknownuser";
     my $name;
     my $email;
     my %return;
@@ -415,13 +432,21 @@ sub main {
     print "Checking requirements... \n";
     &check_requirements;
 
+    my %userinfo = &git_proper_user;
+
+    print $log "=== DRY RUN ===\n" if $dryrun;
+    print $log $timenow."\n";
+    print $log "Drupal module updates performed by ".$userinfo{'name'}."\n";
+    print $log qx(drush vget --exact site_name);
+    print $log "directory: ".abs_path()."\n\n";
+
     print "Getting drush update status... ";
     my $time = time;
     my %info = &get_modules_info;
     $time = time - $time;
     print "took $time seconds.\n";
 
-    my $num_updates = scalar(keys %info);
+    our $num_updates = scalar(keys %info);
     print "There are $num_updates updates.\n" if ($num_updates > 1);
 
     print "Updating all modules blindly.\n" if $blind;
@@ -435,7 +460,8 @@ sub main {
         $modules .= $info{$k}{'module'}.", ";
         printf "Committing update to %s\n", $info{$k}{'module'};
         &git_commit($info{$k}{'message'});
-        
+        print $log $info{$k}{'message'}."\n\n";
+
         unless ($blind) {
             &post_update($info{$k}{'module'});
             print "\nContinuing...\n";
@@ -453,10 +479,38 @@ sub main {
     $total_time = time - $total_time;
     print "Overall, $total_time seconds\n";
 
+    &end_sub;
+}
+
+sub end_sub {
+    my $interrupt = shift;
+
     unless ($dryrun) {
         print "\nHere is the git log summary:\n\n";
-        system("$GIT_BIN log -n$num_updates");
+        my $gitlog = qx($GIT_BIN log -n$main::num_updates --stat);
+        print $gitlog;
+        print $log $gitlog;
     }
+
+    close $log;
+
+    print "\n";
+
+    if ($interrupt) {
+        print "Interrupted. There may be more updates to perform.\n";
+    }
+    if ($notifyemail) {
+        print "Sending log to $notifyemail\n";
+        system("mail -s 'Drupal Module Updates' $notifyemail < $tmpfile");
+    }
+    if ($keeplog) {
+        print "Log stored in $tmpfile\n";
+    } else {
+        unlink $tmpfile;
+    }
+
+    print "Finished!\n\n";
+    exit;
 }
 
 &main;

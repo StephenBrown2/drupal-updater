@@ -38,12 +38,14 @@ or '--nodb' to simply skip the database update.
 Options:
 --------
 <pre>
---blind         | runs through all updates without pausing to check for breakage in between
---dryrun        | runs through the motions without actually performing any changes
---nodb          | runs through all code updates, but does not update the database
---verbose       | shows output from drush up command pertinent to the module being updated
---core-only     | shows only core updates (i.e. the project name = drupal)
---security-only | shows only security updates (i.e. the update status =~ SECURITY)
+--blind                         | runs through all updates without pausing to check for breakage in between
+--dryrun                        | runs through the motions without actually performing any changes
+--nodb                          | runs through all code updates, but does not update the database
+--verbose                       | shows output from drush up command pertinent to the module being updated
+--core-only                     | shows only core updates (i.e. the project name = drupal)
+--security-only                 | shows only security updates (i.e. the update status =~ SECURITY)
+--log|keeplog                   | saves the update log to a file, and prints the location at the end
+--notify|email='email[,email]'  | specify one or email addresses, separated by commas, to send the log to
 </pre>
 
 TODO:
