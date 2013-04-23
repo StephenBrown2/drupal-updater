@@ -5,23 +5,32 @@ use strict;
 use Cwd qw(abs_path);
 use POSIX qw(strftime);
 use Term::ReadKey;
-use Getopt::Long;
+use Getopt::Long::Descriptive;
 use Data::Dumper;
 
 our $DRUSH_BIN = '';
 our $GIT_BIN = '';
-my ($blind,$dryrun,$keeplog,$nodb,$verbose,$author,$coreonly,$securityonly,$notifyemail);
-my $options = GetOptions (
-                 "blind" => \$blind,
-                 "test|dryrun" => \$dryrun,
-                 "log|keeplog" => \$keeplog,
-                 "nodb" => \$nodb,
-                 "verbose" => \$verbose,
-                 "author=s" => \$author,
-                 "core-only" => \$coreonly,
-                 "security-only" => \$securityonly,
-                 "notify|email=s" => \$notifyemail
-              );
+
+my ($opt, $usage) = describe_options (
+        '%c %o',
+        [ 'blind', 'runs through all updates without pausing to check for breakage in between' ],
+        [ 'dryrun|dry-run|test', 'runs through the motions without actually performing any changes' ],
+        [ 'nodb|no-db', 'runs through all code updates, but does not update the database' ],
+        [ 'coreonly|core-only', 'shows only core updates (i.e. the project name = drupal)' ],
+        [ 'securityonly|security-only', 'shows only security updates (i.e. the update status =~ SECURITY)' ],
+        [ 'notifyemail|notify|email=s', 'specify one or email addresses, separated by commas, to send the log to' ],
+        [ 'keeplog|log', 'saves the update log to a file, and prints the location at the end' ],
+        [ 'author=s', 'set git commit author string, use when unable to automatically find it correctly' ],
+        [ 'verbose|v', 'print more information during run' ],
+        [ 'help|h|?', 'print this help message and exit' ],
+    );
+
+print($usage->text), exit if $opt->help;
+
+my ($blind, $dryrun, $keeplog, $nodb, $verbose, $author, $coreonly,
+        $securityonly, $notifyemail) =
+   ($opt->blind, $opt->dryrun, $opt->keeplog, $opt->nodb, $opt->verbose,
+        $opt->author, $opt->coreonly, $opt->securityonly, $opt->notifyemail);
 
 # Set up logfile
 my $timenow = strftime("%FT%T", localtime);
