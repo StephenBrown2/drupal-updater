@@ -418,8 +418,13 @@ sub post_update {
     qx($DRUSH_BIN \@sites -y cache-clear all) unless $dryrun;
 
     print "\nPlease verify that nothing broke,\n";
-    print "especially anything related to: $module\nThen ";
-    &press_any_key;
+    print "especially anything related to: $module\nthen ";
+
+    unless ( $blind ) {
+        &press_any_key;
+    } else {
+        print "alert the appropriate site owner to review.\n";
+    }
 }
 
 sub main {
