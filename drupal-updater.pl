@@ -31,8 +31,7 @@ my $tmpfile = "/tmp/drupal_updater-$timefile.log";
 
 open(my $log, ">>", $tmpfile);
 
-# Set up INT (Ctrl-C) (Ctrl-C) (Ctrl-C) (Ctrl-C) (Ctrl-C) (Ctrl-C) (Ctrl-C)
-# (Ctrl-C) (Ctrl-C) handler
+# Set up INT (Ctrl-C) handler
 $SIG{'INT'} = \&end_sub;
 
 sub get_drush_up_status {
@@ -374,10 +373,11 @@ sub git_commit {
 }
 
 sub press_any_key {
-    print "press any key to continue, or CTRL-C to quit.\n";
-    ReadMode('cbreak'); # Mode 4, Turn off controls keys
-    my $key = ReadKey(0);
-    ReadMode('normal'); # Mode 0, Reset tty mode before exiting
+    print "press Enter/Return key to continue, or type 'quit' to quit.\n";
+    my $key = <STDIN>;
+    if ($key =~ /^q.*$/i) {
+        &end_sub('quit');
+    }
 }
 
 sub check_requirements {
