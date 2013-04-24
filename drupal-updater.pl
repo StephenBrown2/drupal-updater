@@ -21,7 +21,7 @@ my ($opt, $usage) = describe_options (
         [ 'notifyemail|notify|email=s', 'specify one or email addresses, separated by commas, to send the log to' ],
         [ 'keeplog|log', 'saves the update log to a file, and prints the location at the end' ],
         [ 'author=s', 'set git commit author string, use when unable to automatically find it correctly' ],
-        [ 'verbose|v', 'print more information during run' ],
+        [ 'verbose|v', 'print more information from drush during run' ],
         [ 'help|h|?', 'print this help message and exit' ],
     );
 
