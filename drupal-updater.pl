@@ -451,7 +451,7 @@ sub main {
     print $log "=== DRY RUN ===\n" if $dryrun;
     print $log $timenow."\n";
     print $log "Drupal module updates performed by ".$userinfo{'name'}."\n";
-    print $log qx(drush vget --exact site_name);
+    print $log qx($DRUSH_BIN vget --exact site_name);
     print $log "directory: ".abs_path()."\n\n";
 
     print "Getting drush update status... ";
