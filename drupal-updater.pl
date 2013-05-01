@@ -18,6 +18,7 @@ my ($opt, $usage) = describe_options (
         [ 'nodb|no-db', 'runs through all code updates, but does not update the database' ],
         [ 'coreonly|core-only', 'shows only core updates (i.e. the project name = drupal)' ],
         [ 'securityonly|security-only', 'shows only security updates (i.e. the update status =~ SECURITY)' ],
+        [ 'enabledonly|enabled-only', 'shows only updates for enabled and installed modules' ],
         [ 'notifyemail|notify|email=s', 'specify one or email addresses, separated by commas, to send the log to' ],
         [ 'keeplog|log', 'saves the update log to a file, and prints the location at the end' ],
         [ 'author=s', 'set git commit author string, use when unable to automatically find it correctly' ],
@@ -456,6 +457,9 @@ sub main {
 
     print "Getting drush update status... ";
     my $time = time;
+
+    system("$DRUSH_BIN",'vset','-y','--exact','update_check_disabled','1') unless $opt->enabledonly;
+
     my %info = &get_modules_info;
     $time = time - $time;
     print "took $time seconds.\n";
@@ -507,6 +511,8 @@ sub end_sub {
     }
 
     close $log;
+
+    system("$DRUSH_BIN",'vdel','-y','--exact','update_check_disabled') unless $opt->enabledonly;
 
     print "\n";
 
