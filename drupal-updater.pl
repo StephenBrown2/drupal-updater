@@ -4,10 +4,56 @@ use strict;
 
 use Cwd qw(abs_path);
 use POSIX qw(strftime);
+use Readonly;
 use Term::ReadKey;
 use Getopt::Long::Descriptive;
+use JSON::XS;
 use Data::Dumper;
 
+# These are internally used constants for Drupal: core/modules/update/update.module
+
+# URL to check for updates, if a given project doesn't define its own.
+Readonly my $UPDATE_DEFAULT_URL => 'http://updates.drupal.org/release-history';
+
+# Project is missing security update(s).
+Readonly my $UPDATE_NOT_SECURE => 1;
+
+# Current release has been unpublished and is no longer available.
+Readonly my $UPDATE_REVOKED => 2;
+
+# Current release is no longer supported by the project maintainer.
+Readonly my $UPDATE_NOT_SUPPORTED => 3;
+
+# Project has a new release available, but it is not a security release.
+Readonly my $UPDATE_NOT_CURRENT => 4;
+
+# Project is up to date.
+Readonly my $UPDATE_CURRENT => 5;
+
+# Project's status cannot be checked.
+Readonly my $UPDATE_NOT_CHECKED => -1;
+
+# No available update data was found for project.
+Readonly my $UPDATE_UNKNOWN => -2;
+
+# There was a failure fetching available update data for this project.
+Readonly my $UPDATE_NOT_FETCHED => -3;
+
+# We need to (re)fetch available update data for this project.
+Readonly my $UPDATE_FETCH_PENDING => -4;
+
+Readonly my $status_codes => { $UPDATE_NOT_SECURE    => 'Project is missing security update(s).',
+                               $UPDATE_REVOKED       => 'Current release has been unpublished and is no longer available.',
+                               $UPDATE_NOT_SUPPORTED => 'Current release is no longer supported by the project maintainer.',
+                               $UPDATE_NOT_CURRENT   => 'Project has a new release available, but it is not a security release.',
+                               $UPDATE_CURRENT       => 'Project is up to date.',
+                               $UPDATE_NOT_CHECKED   => 'Project\'s status cannot be checked.',
+                               $UPDATE_UNKNOWN       => 'No available update data was found for project.',
+                               $UPDATE_NOT_FETCHED   => 'There was a failure fetching available update data for this project.',
+                               $UPDATE_FETCH_PENDING => 'We need to (re)fetch available update data for this project.',
+                          };
+
+our $DEBUG = 0;
 our $DRUSH_BIN = '';
 our $GIT_BIN = '';
 
@@ -41,164 +87,37 @@ my $tmpfile = "/tmp/drupal_updater-$timefile.log";
 
 open(my $log, ">>", $tmpfile);
 
-# Set up INT (Ctrl-C) handler
-$SIG{'INT'} = \&end_sub;
+sub has_drush {
+    $DEBUG and print( (caller(0))[3]."\n" );
 
-sub get_drush_up_status {
-    my %update_info;
-
-    open (DRUSHUPSTATUS, "$DRUSH_BIN pm-update --cache --pipe 2>/dev/null |");
-
-    while (<DRUSHUPSTATUS>) {
-        chomp;
-        next if /^\s*$/;
-        my @info = split;
-        next if ($info[0] =~ /PHP/) || ($info[5]);
-        next if &module_is_locked($info[0]);
-        $info[3] =~ s/-/ /g; # Strip out the dashes used to make --pipe space-separated
-        $update_info{$info[0]}{'machine_name'} = $info[0];
-        $update_info{$info[0]}{'current_version'} = $info[1];
-        $update_info{$info[0]}{'new_version'} = $info[2];
-        $update_info{$info[0]}{'update_status'} = $info[3];
-    }
-
-    close DRUSHUPSTATUS;
-
-    return %update_info;
+    $DRUSH_BIN = qx/which drush/ or return 0;
+    chomp($DRUSH_BIN);
+    return 1;
 }
 
-sub module_path {
-    my $module = shift;
+sub get_drush_version {
+    $DEBUG and print( (caller(0))[3]."\n" );
 
-    my @info = split /\s:|\n/, `$DRUSH_BIN pm-info $module 2>/dev/null`;
-
-    my $path = 0;
-    for (@info) {
-        chomp;
-        s/^\s*|\s*$|\s{2,}//g;
-        $path = $_ if $path;
-        last if $path;
-        $path = 1 if $_ eq 'Path';
-    }
-
-    return $path;
+    my $drush_version = qx/$DRUSH_BIN version --format=string --strict=0/;
+    chomp $drush_version;
+    return $drush_version;
 }
 
-sub drush_status {
-    my @oa = split /\s+:|\n/, `$DRUSH_BIN status 2>/dev/null`;
+sub is_drush_6 {
+    $DEBUG and print( (caller(0))[3]."\n" );
 
-    my ($slash, $prev_slash);
-    my $index = 0;
-    for (@oa) {
-        chomp;
-        s/^\s*|\s*$|\s{2,}//g;
-        $_ = 'none' if $_ eq '';
-        if ( $_ =~ m/^\// ) { # Sometimes there are more than one value per key
-            $slash = 1;       # These are generally file paths
-        } else {
-            $slash = 0;
-        }
-        if ( $slash and $prev_slash ) { # Combine multiple sequential file paths
-            splice @oa, $index-1, 2, $oa[$index-1]." $_";
-            $slash = 0;
-        }
-        $prev_slash = $slash;
-        $index++;
-    }
-
-    map { s/^\s*|\s*$|\s{2,}//g } @oa; # Redo the space cleanup
-
-    my %oh = @oa;
-
-    for my $k ( keys %oh ) {
-        (my $nk = lc $k) =~ s/ /_/g;
-        $oh{$nk} = delete $oh{$k};
-    }
-
-    return %oh;
-}
-
-sub module_is_locked {
-    my $module = shift;
-
-    my %drush_status = &drush_status;
-    my $module_path = &module_path($module);
-
-    my $drush_lockfile = $drush_status{'drupal_root'}.'/'.$module_path.'/.drush-lock-update';
-
-    if (-e $drush_lockfile ) {
+    my $drush_version = &get_drush_version;
+    if ( $drush_version =~ /^6/ ) {
         return 1;
     } else {
         return 0;
     }
 }
 
-sub get_modules_list {
-    my %modules_info;
-
-    open (DRUSHPMLIST, "COLUMNS=1000 $DRUSH_BIN pm-list 2>/dev/null |");
-
-    while (<DRUSHPMLIST>) {
-        chomp;
-        my @temp = split /\s{2,}/;
-        next unless (defined $temp[0] && defined $temp[1]);
-        next if ($temp[0] =~ /Package/ && $temp[1] =~ /Name/);
-        my ($name, $module) = ($temp[1] =~ /(.*)\(([^)]+)\)$/);
-        $temp[4] = 'None' unless defined $temp[4];
-        my @info = ($module, $name, $temp[0], $temp[2], $temp[3], $temp[4]);
-        $info[1] =~ s/\s$//;
-        $info[2] =~ s/^\s//;
-        $modules_info{$info[0]}{'machine_name'} = $info[0];
-        $modules_info{$info[0]}{'human_name'} = $info[1];
-        $modules_info{$info[0]}{'package'} = $info[2];
-        $modules_info{$info[0]}{'type'} = $info[3];
-        $modules_info{$info[0]}{'install_status'} = $info[4];
-        $modules_info{$info[0]}{'current_version'} = $info[5];
-    }
-
-    close DRUSHPMLIST;
-
-    return %modules_info;
-}
-
-sub get_modules_info {
-    my %drush_up = &get_drush_up_status;
-    my %modules_info = &get_modules_list;
-    my %return_hash;
-
-    foreach my $name ( keys %drush_up ) {
-        $drush_up{$name}{'human_name'} = $modules_info{$name}{'human_name'};
-        $drush_up{$name}{'human_name'} = 'Drupal Core' if $name eq 'drupal'
-    }
-
-    # Sort the updates to do the more important ones first:
-    # Unsupported, then Security, then regular (Bugfix) updates
-    my $priority = 0;
-    foreach my $key ( sort {$drush_up{$a}{'update_status'} cmp $drush_up{$b}{'update_status'}} keys %drush_up ) {
-        if ($coreonly) { next unless $drush_up{$key}{'machine_name'} eq 'drupal'; }
-        if ($securityonly) { next unless $drush_up{$key}{'update_status'} =~ m/SECURITY/; }
-        my $message = sprintf "Update %s module (%s) from %s to %s - %s",
-                    $drush_up{$key}{'human_name'},
-                    $drush_up{$key}{'machine_name'},
-                    $drush_up{$key}{'current_version'},
-                    $drush_up{$key}{'new_version'},
-                    $drush_up{$key}{'update_status'};
-
-         $return_hash{$priority}{'module'} = $drush_up{$key}{'machine_name'};
-         $return_hash{$priority}{'message'} = $message;
-         $priority++;
-    }
-    return %return_hash;
-}
-
-sub has_drush {
-    $DRUSH_BIN = qx/which drush/ or return 0;
-    chomp($DRUSH_BIN);
-    return 1;
-}
-
 sub is_drupal {
-    if (qx/$DRUSH_BIN status --pipe/ =~ 'drupal_version') {
+    $DEBUG and print( (caller(0))[3]."\n" );
+
+    if (qx/$DRUSH_BIN status --pipe/ =~ /drupal[_-]version/) {
         return 1;
     } else {
         return 0;
@@ -206,12 +125,16 @@ sub is_drupal {
 }
 
 sub has_git {
+    $DEBUG and print( (caller(0))[3]."\n" );
+
     $GIT_BIN = qx/which git/ or return 0;
     chomp($GIT_BIN);
     return 1;
 }
 
 sub is_git {
+    $DEBUG and print( (caller(0))[3]."\n" );
+
     if (qx/$GIT_BIN rev-parse --is-inside-work-tree/ =~ 'true') {
         return 1;
     } else {
@@ -220,6 +143,8 @@ sub is_git {
 }
 
 sub git_root_dir {
+    $DEBUG and print( (caller(0))[3]."\n" );
+
     if (&is_git) {
         my $dir = qx/$GIT_BIN rev-parse --show-toplevel/;
         chomp $dir;
@@ -228,6 +153,8 @@ sub git_root_dir {
 }
 
 sub git_is_dirty {
+    $DEBUG and print( (caller(0))[3]."\n" );
+
     if (&is_git) {
         system($GIT_BIN, "diff-index", "--quiet", "HEAD", "--");
         my $exit_code = $? >> 8;
@@ -235,10 +162,136 @@ sub git_is_dirty {
     }
 }
 
+sub press_any_key {
+    $DEBUG and print( (caller(0))[3]."\n" );
+
+    print "press Enter/Return key to continue, or type 'quit' to quit.\n";
+    my $key = <STDIN>;
+    if ($key =~ /^q.*$/i) {
+        &end_sub('quit');
+    }
+}
+
+sub check_requirements {
+    $DEBUG and print( (caller(0))[3]."\n" );
+
+    if (&has_drush) {
+        print "Drush is installed: $DRUSH_BIN\n";
+    } else {
+        print "Could not find drush, exiting.\n";
+        exit;
+    }
+    if (&is_drush_6) {
+        print "Drush is up to date: ".&get_drush_version."\n";
+    } else {
+        print "This script relies on outputformats, which were introduced in\n".
+              "Drush 6. Please update your drush to use this script. Exiting.\n";
+        exit;
+    }
+    if (&has_git) {
+        print "Git is installed: $GIT_BIN\n";
+    } else {
+        print "Could not find git, exiting.\n";
+        exit;
+    }
+    if (&is_drupal) {
+        print "This is a Drupal site\n";
+    } else {
+        print "This does not appear to be a Drupal installation, exiting.\n";
+        exit;
+    }
+    if (&is_git) {
+        print "This site is controlled by git\n";
+        print "The current branch is: ".&current_branch."\n";
+        &require_clean_work_tree;
+    } else {
+        print "This is not a git repository, exiting.\n";
+    }
+}
+
+##########
+# Git related methods
+##########
+
+sub git_proper_user {
+    $DEBUG and print( (caller(0))[3]."\n" );
+
+    my $login = getlogin || getpwuid($<) || "unknownuser";
+    my $name;
+    my $email;
+    my %return;
+
+    if ( -e "/home/$login/.gitconfig" ) {
+        # Get the git author information from the actual user's gitconfig, useful if sudo'ed
+        $name = qx($GIT_BIN config --file /home/$login/.gitconfig --get user.name);
+        $email = qx($GIT_BIN config --file /home/$login/.gitconfig --get user.email);
+    } elsif ( -e "/$login/.gitconfig" ) {
+        # Fallback for root user if actual user isn't detected
+        $name = qx($GIT_BIN config --file /$login/.gitconfig --get user.name);
+        $email = qx($GIT_BIN config --file /$login/.gitconfig --get user.email);
+    } else {
+        # Fallback if things really break for some reason
+        $name = qx($GIT_BIN config --get user.name);
+        $email = qx($GIT_BIN config --get user.email);
+    }
+
+    chomp( $name, $email );
+    $return{'name'} = $name;
+    $return{'email'} = $email;
+
+    return %return;
+}
+
+sub git_commit {
+    $DEBUG and print( (caller(0))[3]."\n" );
+
+    my $update_info = shift || die("No message passed to git commit");
+    my $git_root = &git_root_dir;
+    my %user = &git_proper_user;
+    my $username = $user{'name'};
+    my $useremail = $user{'email'};
+    my $authorstring = $author ? $author : "$username <$useremail>";
+
+    if ($dryrun) {
+        print "DRYRUN: $GIT_BIN add -A $git_root\n";
+        print "DRYRUN: $GIT_BIN commit --author=\"$authorstring\" -m \"$update_info\"\n";
+    } else {
+        print "VERBOSE: $GIT_BIN add -A $git_root\n" if $verbose;
+        my $git_add_output = qx($GIT_BIN add -A $git_root);
+        print $git_add_output if $verbose;
+        print "VERBOSE: $GIT_BIN commit --author=\"$authorstring\" -m \"$update_info\"\n" if $verbose;
+        my $git_commit_output = qx($GIT_BIN commit --author="$authorstring" -m "$update_info");
+        print $git_commit_output if $verbose;
+    }
+}
+
+sub post_update {
+    $DEBUG and print( (caller(0))[3]."\n" );
+
+    my $module = shift;
+
+    print "Updating database...\n";
+    qx($DRUSH_BIN \@sites -y updatedb) unless ($dryrun or $nodb);
+
+    print "Clearing cache...\n";
+    qx($DRUSH_BIN \@sites -y cache-clear all) unless $dryrun;
+
+    print "\nPlease verify that nothing broke,\n";
+    print "especially anything related to: $module\nthen ";
+
+    unless ( $blind ) {
+        &press_any_key;
+    } else {
+        print "alert the appropriate site owner to review.\n";
+    }
+}
+
 # Borrowed and modified from git itself (Git 1.8.0, but code added in Oct 2010)
 # Ref: http://stackoverflow.com/a/3879077
 # Ref: http://stackoverflow.com/a/2659808
 sub require_clean_work_tree {
+    $DEBUG and print( (caller(0))[3]."\n" );
+
     system("$GIT_BIN rev-parse --verify HEAD >/dev/null 2>&1");
     exit 1 unless ($? >> 8) == 0;
     system("$GIT_BIN update-index -q --ignore-submodules --refresh >/dev/null 2>&1");
@@ -289,6 +342,8 @@ sub require_clean_work_tree {
 }
 
 sub current_branch {
+    $DEBUG and print( (caller(0))[3]."\n" );
+
     if (&is_git) {
         my $branch = qx($GIT_BIN rev-parse --abbrev-ref HEAD 2>/dev/null);
         chomp $branch;
@@ -296,7 +351,189 @@ sub current_branch {
     }
 }
 
+##########
+# Drush related methods
+##########
+
+sub json_from_drush {
+    $DEBUG and print( (caller(0))[3]."\n" );
+
+    my $drush_command = shift;
+    my $override      = shift or 0;
+    my $fh;
+    unless ( $override ) {
+        open( $fh, "-|", "$DRUSH_BIN $drush_command --format=json 2>/dev/null" );
+    } else {
+        open( $fh, "-|", "$drush_command" );
+    }
+    my $json = <$fh>;
+    my $decoded_json = decode_json( $json );
+    close( $fh );
+
+    return $decoded_json;
+}
+
+sub module_path {
+    $DEBUG and print( (caller(0))[3]."\n" );
+
+    my $module = shift;
+
+    my $drush_command = "pm-info $module";
+    my $decoded_json = &json_from_drush($drush_command);
+
+    my $path = $decoded_json->{$module}->{'path'};
+
+    return $path;
+}
+
+sub get_drush_status {
+    $DEBUG and print( (caller(0))[3]."\n" );
+
+    my $drush_command = 'status';
+
+    my $decoded_json = &json_from_drush($drush_command);
+
+    return $decoded_json;
+}
+
+sub module_is_locked {
+    $DEBUG and print( (caller(0))[3]."\n" );
+
+    my $module = shift;
+    return 0 if $module eq 'drupal'; # Can't lock drupal core
+    my $drush_status = &get_drush_status;
+    my $drupal_root  = $drush_status->{'root'};
+    my $module_path  = &module_path($module);
+
+    my $drush_lockfile = "$drupal_root/$module_path/.drush-lock-update";
+
+    if (-e $drush_lockfile) {
+        return 1;
+    } else {
+        return 0;
+    }
+}
+
+sub get_modules_list {
+    $DEBUG and print( (caller(0))[3]."\n" );
+
+    my %modules_info;
+
+    my $drush_command = 'pm-list';
+
+    my $decoded_json = &json_from_drush($drush_command);
+
+    foreach my $module ( keys %$decoded_json ) {
+        $modules_info{$module}{'machine_name'}    = $module;
+        $modules_info{$module}{'human_name'}      = $decoded_json->{$module}->{'name'};
+        $modules_info{$module}{'package'}         = $decoded_json->{$module}->{'package'};
+        $modules_info{$module}{'type'}            = $decoded_json->{$module}->{'type'};
+        $modules_info{$module}{'install_status'}  = $decoded_json->{$module}->{'status'};
+        $modules_info{$module}{'current_version'} = $decoded_json->{$module}->{'version'};
+    }
+
+    return %modules_info;
+}
+
+sub get_drush_pm_updatestatus {
+    $DEBUG and print( (caller(0))[3]."\n" );
+
+    my $updatestatus_ref;
+    my %updatestatus;
+
+    my $security = $opt->securityonly ? '--security-only' : '';
+    my $core = $opt->coreonly ? 'drupal' : '';
+
+    my $drushupscommand = "$DRUSH_BIN \@sites pm-updatestatus -y --format=json ".
+                          "$security $core 2>/dev/null | grep -Ev ".
+                          "'(You are|^  |Continue)' | sed -e 's/.*>> //g'";
+
+    $updatestatus_ref = &json_from_drush($drushupscommand, 'true');
+
+    # hash = {
+    #      'module' => {
+    #                     'name' => 'machine_name',
+    #                     'existing_version' => 'current_version',
+    #                     'title' => 'human_name',
+    #                     'label' => 'human_name (machine_name)',
+    #                     'status_msg' => 'update_status',
+    #                     'status' => 'status_code',
+    #                     'candidate_version' => 'new_version'
+    #                   },
+
+    foreach my $key ( keys %$updatestatus_ref ) {
+        $DEBUG and print "\nChecking module: $key\n";
+        # Remove irrelevant updates: NOT_CHECKED, UNKNOWN,
+        # NOT_FETCHED, FETCH_PENDING, CURRENT
+        if ($updatestatus_ref->{$key}->{'status'} < $UPDATE_NOT_SECURE or
+            $updatestatus_ref->{$key}->{'status'} == $UPDATE_CURRENT) {
+            $DEBUG and print $status_codes->{$updatestatus_ref->{$key}->{'status'}};
+            $DEBUG and print "\nSkipping.\n";
+            next;
+        }
+        # Remove locked updates
+        if (&module_is_locked($key)) {
+            $DEBUG and print "Module is locked.\n";
+            $DEBUG and print "Skipping.\n";
+            next;
+        }
+        # Take care of the edge case where --security-only and --core-only are
+        # specified and drupal is only NOT_CURRENT, not NOT_SECURE.
+        if ($opt->securityonly and $updatestatus_ref->{$key}->{'status'} != $UPDATE_NOT_SECURE) {
+            $DEBUG and print "Module is not insecure.\n";
+            $DEBUG and print "Skipping.\n";
+            next;
+        }
+        $DEBUG and print
+        $status_codes->{$updatestatus_ref->{$key}->{'status'}}."\n";
+        $updatestatus{$key}{'label'}            = $updatestatus_ref->{$key}->{'label'};
+        $updatestatus{$key}{'human_name'}       = $updatestatus_ref->{$key}->{'title'};
+        $updatestatus{$key}{'machine_name'}     = $updatestatus_ref->{$key}->{'name'};
+        $updatestatus{$key}{'current_version'}  = $updatestatus_ref->{$key}->{'existing_version'};
+        $updatestatus{$key}{'new_version'}      = $updatestatus_ref->{$key}->{'candidate_version'};
+        $updatestatus{$key}{'update_status'}    = $updatestatus_ref->{$key}->{'status_msg'};
+        $updatestatus{$key}{'status_code'}      = $updatestatus_ref->{$key}->{'status'};
+    }
+
+    return %updatestatus;
+}
+
+sub get_modules_info {
+    $DEBUG and print( (caller(0))[3]."\n" );
+
+    my %return_hash;
+    my %temp_hash;
+    my %drush_ups = &get_drush_pm_updatestatus;
+    my $priority = 0;
+
+    # Prepare the hash for sorting
+    foreach my $key ( keys %drush_ups ) {
+        $temp_hash{$drush_ups{$key}{'status_code'}}{$key} = $drush_ups{$key};
+    }
+    # Sort the updates to do the more important ones first:
+    # Security, then Revoked, then Unsupported, then Available updates.
+    # Then also sort by name.
+    foreach my $code ( sort {$a <=> $b} keys %temp_hash ) {
+        my $child_href = $temp_hash{$code};
+        foreach my $module ( sort {$a cmp $b} keys %$child_href ) {
+            # Create appropriate message for git commit and logging
+            my $message = sprintf "Update %s from %s to %s - %s",
+                          $child_href->{$module}{'label'},
+                          $child_href->{$module}{'current_version'},
+                          $child_href->{$module}{'new_version'},
+                          $child_href->{$module}{'update_status'};
+
+             $return_hash{$priority}{'module'} = $child_href->{$module}{'machine_name'};
+             $return_hash{$priority}{'message'} = $message;
+             $priority++;
+         }
+    }
+    return %return_hash;
+}
+
 sub update_module {
+    $DEBUG and print( (caller(0))[3]."\n" );
+
     my $module_name = shift;
     my $blank_lines = 0;
     my $blanks_needed = 3;
@@ -323,9 +560,10 @@ sub update_module {
     close DRUSHUP;
 
     # Do some cleanup, don't need the tarball after update
-    my %drush_status = &drush_status;
+    my $drush_status = &get_drush_status;
+    my $drupal_root = $drush_status->{'root'};
     my $module_path = &module_path($module_name);
-    my $cachefile = $drush_status{'drupal_root'}.'/'.$module_path.'*.tar.gz';
+    my $cachefile = "$drupal_root/$module_path*.tar.gz";
 
     if ($dryrun) {
         print "DRYRUN: rm -f $cachefile\n";
@@ -334,110 +572,9 @@ sub update_module {
     }
 }
 
-sub git_proper_user {
-    my $login = getlogin || getpwuid($<) || "unknownuser";
-    my $name;
-    my $email;
-    my %return;
-
-    if ( -e "/home/$login/.gitconfig" ) {
-        # Get the git author information from the actual user's gitconfig, useful if sudo'ed
-        $name = qx($GIT_BIN config --file /home/$login/.gitconfig --get user.name);
-        $email = qx($GIT_BIN config --file /home/$login/.gitconfig --get user.email);
-    } elsif ( -e "/$login/.gitconfig" ) {
-        # Fallback for root user if actual user isn't detected
-        $name = qx($GIT_BIN config --file /$login/.gitconfig --get user.name);
-        $email = qx($GIT_BIN config --file /$login/.gitconfig --get user.email);
-    } else {
-        # Fallback if things really break for some reason
-        $name = qx($GIT_BIN config --get user.name);
-        $email = qx($GIT_BIN config --get user.email);
-    }
-
-    chomp( $name, $email );
-    $return{'name'} = $name;
-    $return{'email'} = $email;
-
-    return %return;
-}
-
-sub git_commit {
-    my $update_info = shift || die("No message passed to git commit");
-    my $git_root = &git_root_dir;
-    my %user = &git_proper_user;
-    my $username = $user{'name'};
-    my $useremail = $user{'email'};
-    my $authorstring = $author ? $author : "$username <$useremail>";
-
-    if ($dryrun) {
-        print "DRYRUN: $GIT_BIN add -A $git_root\n";
-        print "DRYRUN: $GIT_BIN commit --author=\"$authorstring\" -m \"$update_info\"\n";
-    } else {
-        print "VERBOSE: $GIT_BIN add -A $git_root\n" if $verbose;
-        my $git_add_output = qx($GIT_BIN add -A $git_root);
-        print $git_add_output if $verbose;
-        print "VERBOSE: $GIT_BIN commit --author=\"$authorstring\" -m \"$update_info\"\n" if $verbose;
-        my $git_commit_output = qx($GIT_BIN commit --author="$authorstring" -m "$update_info");
-        print $git_commit_output if $verbose;
-    }
-}
-
-sub press_any_key {
-    print "press Enter/Return key to continue, or type 'quit' to quit.\n";
-    my $key = <STDIN>;
-    if ($key =~ /^q.*$/i) {
-        &end_sub('quit');
-    }
-}
-
-sub check_requirements {
-    if (&has_drush) {
-        print "Drush is installed: $DRUSH_BIN\n";
-    } else {
-        print "Could not find drush, exiting.\n";
-        exit;
-    }
-    if (&has_git) {
-        print "Git is installed: $GIT_BIN\n";
-    } else {
-        print "Could not find git, exiting.\n";
-        exit;
-    }
-    if (&is_drupal) {
-        print "This is a Drupal site\n";
-    } else {
-        print "This does not appear to be a Drupal installation, exiting.\n";
-        exit;
-    }
-    if (&is_git) {
-        print "This site is controlled by git\n";
-        print "The current branch is: ".&current_branch."\n";
-        &require_clean_work_tree;
-    } else {
-        print "This is not a git repository, exiting.\n";
-    }
-}
-
-sub post_update {
-    my $module = shift;
-
-    print "Updating database...\n";
-    qx($DRUSH_BIN \@sites -y updatedb) unless ($dryrun or $nodb);
-
-    print "Clearing cache...\n";
-    qx($DRUSH_BIN \@sites -y cache-clear all) unless $dryrun;
-
-    print "\nPlease verify that nothing broke,\n";
-    print "especially anything related to: $module\nthen ";
-
-    unless ( $blind ) {
-        &press_any_key;
-    } else {
-        print "alert the appropriate site owner to review.\n";
-    }
-}
-
 sub main {
+    $DEBUG and print( (caller(0))[3]."\n" );
+
     my $total_time = time;
 
     if ($author && $author !~ /^[^<]+<[^@]+@[^>]+>$/) {
@@ -455,7 +592,7 @@ sub main {
     print $log qx($DRUSH_BIN vget --exact site_name);
     print $log "directory: ".abs_path()."\n\n";
 
-    print "Getting drush update status... ";
+    print "Getting drush update status... \n";
     my $time = time;
 
     system("$DRUSH_BIN",'vset','-y','--exact','update_check_disabled','1') unless $opt->enabledonly;
@@ -465,8 +602,23 @@ sub main {
     print "took $time seconds.\n";
 
     our $num_updates = scalar(keys %info);
-    print "There are $num_updates updates.\n" if ($num_updates > 1);
+    my @updates;
+    foreach my $k (sort keys %info) {
+        push(@updates, $info{$k}{'module'});
+    }
 
+    if ($num_updates > 1) {
+        my $list_updates = join(', ', @updates);
+        print "There are $num_updates updates:\n";
+        $~ = "UPDATELIST";
+        write;
+        format UPDATELIST =
+   ~~^<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+   $list_updates
+
+.
+        $~ = "STDOUT";
+    }
     print "Updating all modules blindly.\n" if $blind;
 
     $blind = 1 if ($num_updates == 1);
@@ -501,6 +653,8 @@ sub main {
 }
 
 sub end_sub {
+    $DEBUG and print( (caller(0))[3]."\n" );
+
     my $interrupt = shift;
 
     unless ($dryrun) {
