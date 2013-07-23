@@ -642,7 +642,7 @@ sub main {
 
     my %userinfo = &git_proper_user;
 
-    my $initial_module_status = &json_from_drush('pm-list');
+    our $initial_module_status = &json_from_drush('pm-list');
 
     print $log "=== DRY RUN ===\n" if $dryrun;
     print $log $timenow."\n";
