@@ -87,6 +87,9 @@ my $tmpfile = "/tmp/drupal_updater-$timefile.log";
 
 open(my $log, ">>", $tmpfile);
 
+# Set up module status hash variable for access later
+our $initial_module_status;
+
 sub has_drush {
     $DEBUG and print( (caller(0))[3]."\n" );
 
@@ -642,7 +645,7 @@ sub main {
 
     my %userinfo = &git_proper_user;
 
-    our $initial_module_status = &json_from_drush('pm-list');
+    $initial_module_status = &json_from_drush('pm-list');
 
     print $log "=== DRY RUN ===\n" if $dryrun;
     print $log $timenow."\n";
