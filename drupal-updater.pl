@@ -172,6 +172,62 @@ sub press_any_key {
     }
 }
 
+# left_diff function ripped from Hash::Diff module verbatim
+
+sub left_diff {
+    my ($h1, $h2) = @_;
+    my $rh = {};
+
+    foreach my $k (keys %{$h1}) {
+        if (ref $h1->{$k} eq 'HASH') {
+            if (ref $h2->{$k} eq 'HASH') {
+                $rh->{$k} = left_diff($h1->{$k}, $h2->{$k});
+            }
+            else {
+                $rh->{$k} = $h1->{$k}
+            }
+        }
+        elsif ((!defined $h2->{$k})||($h1->{$k} ne $h2->{$k})) {
+            $rh->{$k} = $h1->{$k}
+        }
+    }
+
+    return $rh;
+
+}
+
+sub clean_diff {
+    my ($old, $new) = @_;
+
+    my $diff = &left_diff( $new, $old ); # This order gives me what I want
+
+    foreach my $k (keys %$diff) {
+        if ( ref $diff->{$k} eq 'HASH' ) {
+            my $diff_k = $diff->{$k};
+
+            # $k is a hash: recursion might help here,
+            # but for now we only need one level
+            foreach my $dk (keys %$diff_k) {
+                # If the value isn't really there,
+                # remove the key as well.
+                if ( ! $diff_k->{$dk} ) {
+                    delete $diff_k->{$dk};
+                }
+            }
+            # If the hash is empty, remove it
+            if ( scalar keys %$diff_k == 0 ) {
+                delete $diff->{$k};
+            }
+        # If the value isn't really there,
+        # remove the key as well.
+        } elsif ( ! $diff->{$k} ) {
+            delete $diff->{$k};
+        }
+    }
+
+    return $diff;
+}
+
 sub check_requirements {
     $DEBUG and print( (caller(0))[3]."\n" );
 
@@ -586,6 +642,8 @@ sub main {
 
     my %userinfo = &git_proper_user;
 
+    my $initial_module_status = &json_from_drush('pm-list');
+
     print $log "=== DRY RUN ===\n" if $dryrun;
     print $log $timenow."\n";
     print $log "Drupal module updates performed by ".$userinfo{'name'}."\n";
@@ -656,6 +714,22 @@ sub end_sub {
     $DEBUG and print( (caller(0))[3]."\n" );
 
     my $interrupt = shift;
+
+    my $final_module_status = &json_from_drush('pm-list');
+
+    # Diff them!
+    my $new_diff = &clean_diff($initial_module_status,$final_module_status);
+    my $old_diff = &clean_diff($final_module_status,$initial_module_status);
+
+    print "\n\n";
+
+    foreach my $module ( keys %$new_diff ) {
+        foreach my $k ( keys %{$new_diff->{$module}} ) {
+            my $nv = $new_diff->{$module}->{$k};
+            my $ov = $old_diff->{$module}->{$k};
+            print "$module $k was: $ov, now: $nv\n";
+        }
+    }
 
     unless ($dryrun) {
         print "\nHere is the git log summary:\n\n";
