@@ -4,6 +4,8 @@ use strict;
 
 use Cwd qw(abs_path);
 use POSIX qw(strftime);
+use File::Find;
+use Try::Tiny;
 use Readonly;
 use Term::ReadKey;
 use Getopt::Long::Descriptive;
@@ -426,7 +428,14 @@ sub json_from_drush {
         open( $fh, "-|", "$drush_command" );
     }
     my $json = <$fh>;
-    my $decoded_json = decode_json( $json );
+    $DEBUG and print "DEBUG: JSON input '$json'";
+
+    my $decoded_json = try {
+        decode_json( $json );
+    } catch {
+        decode_json( '{ }' );
+    };
+
     close( $fh );
 
     return $decoded_json;
@@ -436,11 +445,20 @@ sub module_path {
     $DEBUG and print( (caller(0))[3]."\n" );
 
     my $module = shift;
+    my $path;
 
     my $drush_command = "pm-info $module";
     my $decoded_json = &json_from_drush($drush_command);
 
-    my $path = $decoded_json->{$module}->{'path'};
+    if ( defined $decoded_json->{$module}->{'path'} ) {
+        $path = $decoded_json->{$module}->{'path'};
+    } else {
+        my @found = ();
+        find( sub { if ( -d && m/^$module$/ ) { push @found, $File::Find::name }}, '.');
+        my $found = shift @found;
+        $found =~ s#^./##;
+        $path = $found;
+    }
 
     return $path;
 }
